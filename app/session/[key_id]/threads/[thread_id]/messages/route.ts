@@ -13,7 +13,7 @@ export async function POST(
     const { key_id, thread_id } = await ctx.params;
     const row = findRoster(normalizeKey(key_id || ""));
     if (!row) return NextResponse.json({ error: "unknown_session_key" }, { status: 404 });
-    const thread = getThread(row.key_id, thread_id);
+    const thread = await getThread(row.key_id, thread_id);
     if (!thread) return NextResponse.json({ error: "unknown_thread" }, { status: 404 });
     const body = (await req.json()) as {
       text?: string;
@@ -23,13 +23,13 @@ export async function POST(
     if (!body.text || !body.sent_at || !body.signature) {
       return NextResponse.json({ error: "text_sent_at_signature_required" }, { status: 400 });
     }
-    addInterrogatorMessage({
+    await addInterrogatorMessage({
       thread,
       text: body.text,
       sent_at: body.sent_at,
       signature: body.signature,
     });
-    addSubjectReply(thread, row);
+    await addSubjectReply(thread, row);
     return NextResponse.json({ ok: true, thread: publicThread(thread) }, { status: 201 });
   } catch (err) {
     const message = err instanceof Error ? err.message : "message_failed";

@@ -12,10 +12,11 @@ export async function GET(
   const { key_id } = await ctx.params;
   const row = findRoster(normalizeKey(key_id || ""));
   if (!row) return NextResponse.json({ error: "unknown_session_key" }, { status: 404 });
+  const threads = await listThreads(row.key_id);
   return NextResponse.json({
     device_id: row.key_id,
     person: row.person,
-    threads: listThreads(row.key_id).map(publicThread),
+    threads: threads.map(publicThread),
   });
 }
 
@@ -39,7 +40,7 @@ export async function POST(
         { status: 400 }
       );
     }
-    const thread = openThread({
+    const thread = await openThread({
       subject: row,
       interrogator_key_id: body.interrogator_key_id,
       cover_ref: body.cover_ref || null,

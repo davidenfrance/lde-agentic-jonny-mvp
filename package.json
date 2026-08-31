@@ -2,13 +2,14 @@
   "name": "lde-agentic-jonny-mvp",
   "version": "0.1.0",
   "private": true,
-  "description": "Emulated agentic host for Jonny Fry. Signs LDI HSM presence from env PEM. Not a real HSM.",
+  "description": "Emulated agentic host for LDE wallets. Signs presence and English threads. Not a real HSM.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.0.1",
     "next": "^15.4.6",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"

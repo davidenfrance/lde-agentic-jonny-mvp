@@ -12,7 +12,7 @@ export async function GET(
   const { key_id, thread_id } = await ctx.params;
   const row = findRoster(normalizeKey(key_id || ""));
   if (!row) return NextResponse.json({ error: "unknown_session_key" }, { status: 404 });
-  const thread = getThread(row.key_id, thread_id);
+  const thread = await getThread(row.key_id, thread_id);
   if (!thread) return NextResponse.json({ error: "unknown_thread" }, { status: 404 });
   return NextResponse.json(publicThread(thread));
 }
@@ -24,11 +24,11 @@ export async function POST(
   const { key_id, thread_id } = await ctx.params;
   const row = findRoster(normalizeKey(key_id || ""));
   if (!row) return NextResponse.json({ error: "unknown_session_key" }, { status: 404 });
-  const thread = getThread(row.key_id, thread_id);
+  const thread = await getThread(row.key_id, thread_id);
   if (!thread) return NextResponse.json({ error: "unknown_thread" }, { status: 404 });
   const body = (await req.json()) as { action?: string };
   if (body.action === "thread-close-mvp") {
-    return NextResponse.json(publicThread(closeThread(thread)));
+    return NextResponse.json(publicThread(await closeThread(thread)));
   }
   return NextResponse.json({ error: "unknown_action" }, { status: 400 });
 }

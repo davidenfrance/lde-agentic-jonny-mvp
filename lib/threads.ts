@@ -1,9 +1,18 @@
 import { randomUUID } from "crypto";
 import { findRoster, type RosterEntry } from "./roster";
-import { canonicalPresence, normalizeKey, signPresence } from "./sign";
+import { normalizeKey, signPresence } from "./sign";
 import { verifyEd25519Hex } from "./ed25519";
+import {
+  dbCloseThread,
+  dbGetThread,
+  dbInsertMessage,
+  dbInsertThread,
+  dbListThreads,
+  ensureThreadSchema,
+  hasDatabase,
+} from "./thread-db";
 
-type ThreadMessage = {
+export type ThreadMessage = {
   seq: number;
   from: "interrogator" | "subject";
   lang: "en";
@@ -31,6 +40,12 @@ function bag(): Map<string, Thread> {
   const g = globalThis as G;
   if (!g.__lde_threads) g.__lde_threads = new Map();
   return g.__lde_threads;
+}
+
+async function persistReady(): Promise<boolean> {
+  if (!hasDatabase()) return false;
+  await ensureThreadSchema();
+  return true;
 }
 
 export function canonicalThreadOpen(body: {
@@ -71,24 +86,27 @@ export function canonicalThreadMessage(body: {
   });
 }
 
-export function listThreads(subject_device_id: string): Thread[] {
+export async function listThreads(subject_device_id: string): Promise<Thread[]> {
   const id = normalizeKey(subject_device_id);
+  if (await persistReady()) return dbListThreads(id);
   return [...bag().values()].filter((t) => t.subject_device_id === id);
 }
 
-export function getThread(subject_device_id: string, thread_id: string): Thread | null {
+export async function getThread(subject_device_id: string, thread_id: string): Promise<Thread | null> {
+  const id = normalizeKey(subject_device_id);
+  if (await persistReady()) return dbGetThread(id, thread_id);
   const t = bag().get(thread_id);
-  if (!t || t.subject_device_id !== normalizeKey(subject_device_id)) return null;
+  if (!t || t.subject_device_id !== id) return null;
   return t;
 }
 
-export function openThread(opts: {
+export async function openThread(opts: {
   subject: RosterEntry;
   interrogator_key_id: string;
   cover_ref?: string | null;
   opened_at: string;
   signature: string;
-}): Thread {
+}): Promise<Thread> {
   const interrogator_key_id = normalizeKey(opts.interrogator_key_id);
   if (interrogator_key_id.length !== 64) throw new Error("invalid_interrogator_key_id");
   const canonical = canonicalThreadOpen({
@@ -114,16 +132,17 @@ export function openThread(opts: {
     open_signature: opts.signature,
     messages: [],
   };
-  bag().set(thread.thread_id, thread);
+  if (await persistReady()) await dbInsertThread(thread);
+  else bag().set(thread.thread_id, thread);
   return thread;
 }
 
-export function addInterrogatorMessage(opts: {
+export async function addInterrogatorMessage(opts: {
   thread: Thread;
   text: string;
   sent_at: string;
   signature: string;
-}): Thread {
+}): Promise<Thread> {
   if (opts.thread.status !== "open") throw new Error("thread_closed");
   const text = (opts.text || "").trim();
   if (!text) throw new Error("text_required");
@@ -141,18 +160,20 @@ export function addInterrogatorMessage(opts: {
   if (!verifyEd25519Hex(canonical, opts.thread.interrogator_key_id, opts.signature)) {
     throw new Error("invalid_interrogator_signature");
   }
-  opts.thread.messages.push({
+  const msg: ThreadMessage = {
     seq,
     from: "interrogator",
     lang: "en",
     text,
     sent_at: opts.sent_at,
     signature: opts.signature,
-  });
+  };
+  opts.thread.messages.push(msg);
+  if (await persistReady()) await dbInsertMessage(opts.thread.thread_id, msg);
   return opts.thread;
 }
 
-export function addSubjectReply(thread: Thread, subject: RosterEntry): Thread {
+export async function addSubjectReply(thread: Thread, subject: RosterEntry): Promise<Thread> {
   const sent_at = new Date().toISOString();
   const seq = thread.messages.length + 1;
   const last = [...thread.messages].reverse().find((m) => m.from === "interrogator");
@@ -170,20 +191,23 @@ export function addSubjectReply(thread: Thread, subject: RosterEntry): Thread {
     sent_at,
   });
   const signature = signPresence(canonical, subject.key_id);
-  thread.messages.push({
+  const msg: ThreadMessage = {
     seq,
     from: "subject",
     lang: "en",
     text,
     sent_at,
     signature,
-  });
+  };
+  thread.messages.push(msg);
+  if (await persistReady()) await dbInsertMessage(thread.thread_id, msg);
   return thread;
 }
 
-export function closeThread(thread: Thread): Thread {
+export async function closeThread(thread: Thread): Promise<Thread> {
   thread.status = "closed";
   thread.closed_at = new Date().toISOString();
+  if (await persistReady()) await dbCloseThread(thread.thread_id, thread.closed_at);
   return thread;
 }
 
@@ -198,9 +222,11 @@ export function publicThread(thread: Thread) {
     closed_at: thread.closed_at,
     status: thread.status,
     messages: thread.messages,
-    note: "English text thread. Not a Bind. Server memory is MVP only and may reset on deploy.",
+    persistent: hasDatabase(),
+    note: hasDatabase()
+      ? "English text thread stored in Postgres. Not a Bind."
+      : "English text thread. DATABASE_URL is not set; memory only.",
   };
 }
 
-void canonicalPresence;
 export { findRoster };
