@@ -1,4 +1,4 @@
-import { createPrivateKey, sign } from "crypto";
+import { createPrivateKey, createPublicKey, sign } from "crypto";
 import { findRoster, ROSTER } from "./roster";
 
 export const DEFAULT_DEVICE_ID =
@@ -51,6 +51,55 @@ export function pemForDevice(device_id: string): string {
   throw new Error(`pem_not_configured_for_${id}`);
 }
 
+export function inspectPem(device_id: string): {
+  pem_configured: boolean;
+  pem_parse_ok: boolean;
+  begin_private_key: boolean;
+  type: string | null;
+  pub_matches_id: boolean | null;
+  error: string | null;
+} {
+  let raw: string | null = null;
+  try {
+    raw = pemForDevice(device_id);
+  } catch {
+    return {
+      pem_configured: false,
+      pem_parse_ok: false,
+      begin_private_key: false,
+      type: null,
+      pub_matches_id: null,
+      error: "missing",
+    };
+  }
+  const norm = normalizePem(raw);
+  const begin_private_key = norm.includes("-----BEGIN PRIVATE KEY-----");
+  try {
+    const key = createPrivateKey(norm);
+    const pub = createPublicKey(key)
+      .export({ type: "spki", format: "der" })
+      .subarray(-32)
+      .toString("hex");
+    return {
+      pem_configured: true,
+      pem_parse_ok: true,
+      begin_private_key,
+      type: key.asymmetricKeyType || null,
+      pub_matches_id: pub === normalizeKey(device_id),
+      error: null,
+    };
+  } catch (err) {
+    return {
+      pem_configured: true,
+      pem_parse_ok: false,
+      begin_private_key,
+      type: null,
+      pub_matches_id: null,
+      error: err instanceof Error ? err.message : "parse_failed",
+    };
+  }
+}
+
 export function canonicalPresence(body: {
   device_id: string;
   state: string;
@@ -76,6 +125,6 @@ export function rosterPublic() {
     key_id: r.key_id,
     person: r.person,
     firm: r.firm,
-    pem_configured: Boolean(process.env[r.pem_env] || pemsFromJson()[r.key_id]),
+    ...inspectPem(r.key_id),
   }));
 }
