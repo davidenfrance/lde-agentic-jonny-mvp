@@ -18,6 +18,12 @@ export const ROSTER: RosterEntry[] = [
     firm: "London Digital Escrow Limited",
     pem_env: "DAVID_DEVICE_PRIVATE_KEY_PEM",
   },
+  {
+    key_id: "e7f341e20631f8b609b6b9aeac56deb81ebd3de5a51e210d82650ae14202dcbe",
+    person: "Velia Longo",
+    firm: "London Digital Escrow Limited",
+    pem_env: "VELIA_DEVICE_PRIVATE_KEY_PEM",
+  },
 ];
 
 export function findRoster(key_id: string): RosterEntry | undefined {
