@@ -12,16 +12,46 @@ export function looksLikeNdaRequest(text: string): boolean {
   return /\bnda\b/.test(t) || t.includes("non-disclosure") || t.includes("non disclosure");
 }
 
-export function counterpartyFromText(text: string): string {
-  const m = text.match(/full legal name\s+([^;.,]+)[;.,]/i);
-  if (m) return m[1].trim();
-  const n = text.match(/between London Digital Escrow Limited and ([^.]+)\.?/i);
-  if (n) return n[1].trim();
-  return "[Counterparty full legal name]";
+export type InterrogatorParticulars = {
+  name: string;
+  nationality: string;
+  residence: string;
+};
+
+export function parseParticulars(text: string): InterrogatorParticulars {
+  const name =
+    text.match(/full legal name[:\s]+([^;\n]+)/i)?.[1]?.trim() ||
+    text.match(/forenames and surname[:\s]+([^;\n]+)/i)?.[1]?.trim() ||
+    text.match(/between London Digital Escrow Limited and ([^.\n]+)/i)?.[1]?.trim() ||
+    "[Counterparty full legal name]";
+  const nationality =
+    text.match(/nationalit(?:y|ies)[:\s]+([^;\n]+)/i)?.[1]?.trim() ||
+    text.match(/a ([A-Za-z ]+) national/i)?.[1]?.trim() ||
+    "[nationality not stated]";
+  const residence =
+    text.match(/resident(?: during the current calendar year)?(?: in|:)?\s+([^;\n]+)/i)?.[1]?.trim() ||
+    text.match(/countries of residence[^:]*:\s*([^;\n]+)/i)?.[1]?.trim() ||
+    "[country of residence not stated]";
+  return {
+    name: name.replace(/[.,]$/, ""),
+    nationality: nationality.replace(/[.,]$/, ""),
+    residence: residence.replace(/[.,]$/, ""),
+  };
 }
 
-export function buildKnowYourAgentNda(opts: { date: string; counterparty: string }): string {
-  const who = opts.counterparty;
+export function counterpartyFromText(text: string): string {
+  return parseParticulars(text).name;
+}
+
+export function buildKnowYourAgentNda(opts: {
+  date: string;
+  name: string;
+  nationality: string;
+  residence: string;
+}): string {
+  const who = opts.name;
+  const partyTwo = `${who}, a ${opts.nationality} national, resident in ${opts.residence} during the current calendar year (\"Recipient\")`;
+  const notices = `Notices to the Recipient shall be treated as given if sent in the thread in which this NDA was issued, addressed to ${who} at the stated place of residence: ${opts.residence}.`;
   return [
     "LONDON DIGITAL ESCROW",
     "Know Your Agent",
@@ -33,7 +63,7 @@ export function buildKnowYourAgentNda(opts: { date: string; counterparty: string
     "",
     "Parties",
     "1.  London Digital Escrow Limited (\"LDE\"), a private limited company registered in England and Wales under company number 12471868, whose registered office is The Engine Room, Battersea Power Station, 18 The Power Station, London SW11 8BZ.",
-    `2.  ${who} (\"Recipient\").`,
+    `2.  ${partyTwo}.`,
     "",
     "1.  Purpose",
     "The parties wish to discuss London Digital Escrow Limited's Know Your Agent layer and related identity, mandate and execution arrangements (the \"Purpose\"). This agreement lets each party disclose information for that Purpose only.",
@@ -63,7 +93,7 @@ export function buildKnowYourAgentNda(opts: { date: string; counterparty: string
     "Damages may be an inadequate remedy. The Discloser may seek an injunction or specific performance without proof of actual damage.",
     "",
     "10.  General",
-    "This agreement is the whole agreement on confidentiality for the Purpose. It may be amended only in writing signed by both parties. A party may not assign it without the other's written consent. If a term is unenforceable the rest remains. A failure to enforce a term is not a waiver. A person who is not a party has no right under the Contracts (Rights of Third Parties) Act 1999 to enforce it. Notices to LDE: info@LondonDigitalEscrow.com, and in writing to The Engine Room, Battersea Power Station, 18 The Power Station, London SW11 8BZ. Notices to the Recipient: [Recipient notice address and email]. This agreement is governed by the law of England and Wales. The courts of England and Wales have exclusive jurisdiction.",
+    `This agreement is the whole agreement on confidentiality for the Purpose. It may be amended only in writing signed by both parties. A party may not assign it without the other's written consent. If a term is unenforceable the rest remains. A failure to enforce a term is not a waiver. A person who is not a party has no right under the Contracts (Rights of Third Parties) Act 1999 to enforce it. Notices to LDE: info@LondonDigitalEscrow.com, and in writing to The Engine Room, Battersea Power Station, 18 The Power Station, London SW11 8BZ. ${notices} This agreement is governed by the law of England and Wales. The courts of England and Wales have exclusive jurisdiction.`,
     "",
     "11.  Signature",
     "This agreement may be signed in counterparts, including by electronic signature and by cryptographic signature. Each counterpart is an original.",
@@ -74,6 +104,7 @@ export function buildKnowYourAgentNda(opts: { date: string; counterparty: string
     "Execution: cryptographic signature of Jonny Fry applied through his Authenticating Device, being his signature and seal for this NDA only.",
     "",
     `Signed by ${who}`,
+    `Described as: ${partyTwo}.`,
     "Signature: [countersignature to be applied under /nda/countersign]",
     "",
     "Verified. Validated. Vested.",
