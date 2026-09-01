@@ -63,7 +63,7 @@ export async function setInstruction(opts: {
   if (Number.isNaN(issued) || Number.isNaN(exp)) throw new Error("invalid_time");
   if (Math.abs(Date.now() - issued) > 120_000) throw new Error("issued_at_stale");
   if (exp <= issued) throw new Error("expires_before_issued");
-  if (exp - issued > 24 * 60 * 60 * 1000) throw new Error("ttl_over_24h");
+  if (exp - issued > 48 * 60 * 60 * 1000 + 60_000) throw new Error("ttl_over_48h");
   const text = (opts.text || "").trim();
   if (!opts.clear && !text) throw new Error("text_required");
   if (text.length > 4000) throw new Error("text_too_long");
