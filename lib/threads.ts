@@ -6,10 +6,10 @@ import { CONTROLLER_DISCLOSURE_ASK, JONNY_KEY } from "./disclosure";
 import { jonnyThreadGrokReply } from "./jonny-thread-reply";
 import {
   buildKnowYourAgentNda,
-  counterpartyFromText,
   englandDate,
   looksLikeNdaRequest,
   ndaOfferFooter,
+  parseParticulars,
 } from "./nda-template";
 import { registerOffer } from "./nda";
 import {
@@ -208,9 +208,12 @@ export async function addSubjectReply(thread: Thread, subject: RosterEntry): Pro
       .filter((m) => m.from === "interrogator")
       .map((m) => m.text)
       .join(" ");
+    const p = parseParticulars(source);
     ndaWording = buildKnowYourAgentNda({
       date: englandDate(),
-      counterparty: counterpartyFromText(source),
+      name: p.name,
+      nationality: p.nationality,
+      residence: p.residence,
     });
     text = `${ndaWording}${ndaOfferFooter()}`;
   } else if (isJonny && disclosed) {
