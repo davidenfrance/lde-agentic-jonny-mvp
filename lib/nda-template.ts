@@ -18,24 +18,31 @@ export type InterrogatorParticulars = {
   residence: string;
 };
 
+function cleanField(value: string): string {
+  return value
+    .replace(/\s+please\b[\s\S]*$/i, "")
+    .replace(/[.,;:]+$/, "")
+    .trim();
+}
+
 export function parseParticulars(text: string): InterrogatorParticulars {
   const name =
-    text.match(/full legal name[:\s]+([^;\n]+)/i)?.[1]?.trim() ||
-    text.match(/forenames and surname[:\s]+([^;\n]+)/i)?.[1]?.trim() ||
-    text.match(/between London Digital Escrow Limited and ([^.\n]+)/i)?.[1]?.trim() ||
+    text.match(/full legal name[:\s]+([^;\n]+)/i)?.[1] ||
+    text.match(/forenames and surname[:\s]+([^;\n]+)/i)?.[1] ||
+    text.match(/between London Digital Escrow Limited and ([^.\n]+)/i)?.[1] ||
     "[Counterparty full legal name]";
   const nationality =
-    text.match(/nationalit(?:y|ies)[:\s]+([^;\n]+)/i)?.[1]?.trim() ||
-    text.match(/a ([A-Za-z ]+) national/i)?.[1]?.trim() ||
+    text.match(/nationalit(?:y|ies)[:\s]+([^;\n]+)/i)?.[1] ||
+    text.match(/a ([A-Za-z ]+) national/i)?.[1] ||
     "[nationality not stated]";
   const residence =
-    text.match(/resident(?: during the current calendar year)?(?: in|:)?\s+([^;\n]+)/i)?.[1]?.trim() ||
-    text.match(/countries of residence[^:]*:\s*([^;\n]+)/i)?.[1]?.trim() ||
+    text.match(/resident(?: during the current calendar year)?(?: in|:)?\s+([^.;\n]+)/i)?.[1] ||
+    text.match(/countries of residence[^:]*:\s*([^.;\n]+)/i)?.[1] ||
     "[country of residence not stated]";
   return {
-    name: name.replace(/[.,]$/, ""),
-    nationality: nationality.replace(/[.,]$/, ""),
-    residence: residence.replace(/[.,]$/, ""),
+    name: cleanField(name),
+    nationality: cleanField(nationality),
+    residence: cleanField(residence),
   };
 }
 
