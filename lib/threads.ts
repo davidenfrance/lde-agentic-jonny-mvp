@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { findRoster, type RosterEntry } from "./roster";
 import { normalizeKey, signPresence } from "./sign";
 import { verifyEd25519Hex } from "./ed25519";
+import { CONTROLLER_DISCLOSURE_ASK, JONNY_KEY } from "./disclosure";
 import {
   dbCloseThread,
   dbGetThread,
@@ -173,14 +174,29 @@ export async function addInterrogatorMessage(opts: {
   return opts.thread;
 }
 
+function looksLikeDisclosure(text: string): boolean {
+  const t = text.toLowerCase();
+  const name = t.includes("name") || t.split(/\s+/).length >= 2;
+  const nat = t.includes("nationalit") || t.includes("citizen") || t.includes("british");
+  const res =
+    t.includes("resident") || t.includes("residence") || t.includes("united kingdom") || t.includes("uk");
+  return name && nat && res;
+}
+
 export async function addSubjectReply(thread: Thread, subject: RosterEntry): Promise<Thread> {
   const sent_at = new Date().toISOString();
   const seq = thread.messages.length + 1;
   const last = [...thread.messages].reverse().find((m) => m.from === "interrogator");
-  const text =
-    seq === 2
-      ? `This is the English session host for ${subject.person}, ${subject.firm}. Identity cover lives on LDI, not in this thread. How can I help?`
-      : `Understood. (${subject.person}) You wrote: "${(last?.text || "").slice(0, 240)}" This reply is English text only. It is not a Bind and not settlement.`;
+  const isJonny = subject.key_id === JONNY_KEY;
+  const disclosed = thread.messages.some((m) => m.from === "interrogator" && looksLikeDisclosure(m.text));
+  let text: string;
+  if (isJonny && !disclosed) {
+    text = CONTROLLER_DISCLOSURE_ASK;
+  } else if (seq === 2) {
+    text = `This is the English session host for ${subject.person}, ${subject.firm}. Identity cover lives on LDI, not in this thread. How can I help?`;
+  } else {
+    text = `Understood. (${subject.person}) You wrote: "${(last?.text || "").slice(0, 240)}" This reply is English text only. It is not a Bind and not settlement.`;
+  }
   const canonical = canonicalThreadMessage({
     action: "thread-message-mvp",
     thread_id: thread.thread_id,
