@@ -3,6 +3,7 @@ import { findRoster, type RosterEntry } from "./roster";
 import { normalizeKey, signPresence } from "./sign";
 import { verifyEd25519Hex } from "./ed25519";
 import { CONTROLLER_DISCLOSURE_ASK, JONNY_KEY } from "./disclosure";
+import { jonnyThreadGrokReply } from "./jonny-thread-reply";
 import {
   dbCloseThread,
   dbGetThread,
@@ -192,6 +193,10 @@ export async function addSubjectReply(thread: Thread, subject: RosterEntry): Pro
   let text: string;
   if (isJonny && !disclosed) {
     text = CONTROLLER_DISCLOSURE_ASK;
+  } else if (isJonny && disclosed) {
+    text =
+      (await jonnyThreadGrokReply(thread.messages.map((m) => ({ from: m.from, text: m.text })))) ||
+      `This chat is not a Bind. Identity cover is with London Digital Insurance Limited.`;
   } else if (seq === 2) {
     text = `This is the English session host for ${subject.person}, ${subject.firm}. Identity cover lives on LDI, not in this thread. How can I help?`;
   } else {
