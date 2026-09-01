@@ -5,6 +5,14 @@ import { verifyEd25519Hex } from "./ed25519";
 import { CONTROLLER_DISCLOSURE_ASK, JONNY_KEY } from "./disclosure";
 import { jonnyThreadGrokReply } from "./jonny-thread-reply";
 import {
+  buildKnowYourAgentNda,
+  counterpartyFromText,
+  englandDate,
+  looksLikeNdaRequest,
+  ndaOfferFooter,
+} from "./nda-template";
+import { registerOffer } from "./nda";
+import {
   dbCloseThread,
   dbGetThread,
   dbInsertMessage,
@@ -148,7 +156,7 @@ export async function addInterrogatorMessage(opts: {
   if (opts.thread.status !== "open") throw new Error("thread_closed");
   const text = (opts.text || "").trim();
   if (!text) throw new Error("text_required");
-  if (text.length > 4000) throw new Error("text_too_long");
+  if (text.length > 8000) throw new Error("text_too_long");
   const seq = opts.thread.messages.length + 1;
   const canonical = canonicalThreadMessage({
     action: "thread-message-mvp",
@@ -190,9 +198,21 @@ export async function addSubjectReply(thread: Thread, subject: RosterEntry): Pro
   const last = [...thread.messages].reverse().find((m) => m.from === "interrogator");
   const isJonny = subject.key_id === JONNY_KEY;
   const disclosed = thread.messages.some((m) => m.from === "interrogator" && looksLikeDisclosure(m.text));
+  const ndaAsked = thread.messages.some((m) => m.from === "interrogator" && looksLikeNdaRequest(m.text));
   let text: string;
+  let ndaWording: string | null = null;
   if (isJonny && !disclosed) {
     text = CONTROLLER_DISCLOSURE_ASK;
+  } else if (isJonny && disclosed && ndaAsked) {
+    const source = thread.messages
+      .filter((m) => m.from === "interrogator")
+      .map((m) => m.text)
+      .join(" ");
+    ndaWording = buildKnowYourAgentNda({
+      date: englandDate(),
+      counterparty: counterpartyFromText(source),
+    });
+    text = `${ndaWording}${ndaOfferFooter()}`;
   } else if (isJonny && disclosed) {
     text =
       (await jonnyThreadGrokReply(thread.messages.map((m) => ({ from: m.from, text: m.text })))) ||
@@ -222,6 +242,13 @@ export async function addSubjectReply(thread: Thread, subject: RosterEntry): Pro
   };
   thread.messages.push(msg);
   if (await persistReady()) await dbInsertMessage(thread.thread_id, msg);
+  if (ndaWording) {
+    try {
+      await registerOffer({ thread, wording: ndaWording, company_signature: signature });
+    } catch {
+      // offer store is best-effort; thread reply still stands
+    }
+  }
   return thread;
 }
 
