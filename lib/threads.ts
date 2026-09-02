@@ -4,13 +4,7 @@ import { normalizeKey, signPresence } from "./sign";
 import { verifyEd25519Hex } from "./ed25519";
 import { CONTROLLER_DISCLOSURE_ASK, JONNY_KEY } from "./disclosure";
 import { jonnyThreadGrokReply } from "./jonny-thread-reply";
-import {
-  buildKnowYourAgentNda,
-  englandDate,
-  looksLikeNdaRequest,
-  ndaOfferFooter,
-  parseParticulars,
-} from "./nda-template";
+import { parseParticulars } from "./nda-template";
 import { registerOffer } from "./nda";
 import {
   dbCloseThread,
@@ -192,34 +186,32 @@ function looksLikeDisclosure(text: string): boolean {
   return name && nat && res;
 }
 
+function extractNdaWording(text: string): string | null {
+  const start = text.indexOf("LONDON DIGITAL ESCROW");
+  const end = text.lastIndexOf("Verified. Validated. Vested.");
+  if (start < 0 || end < start) return null;
+  return text.slice(start, end + "Verified. Validated. Vested.".length);
+}
+
 export async function addSubjectReply(thread: Thread, subject: RosterEntry): Promise<Thread> {
   const sent_at = new Date().toISOString();
   const seq = thread.messages.length + 1;
   const last = [...thread.messages].reverse().find((m) => m.from === "interrogator");
   const isJonny = subject.key_id === JONNY_KEY;
   const disclosed = thread.messages.some((m) => m.from === "interrogator" && looksLikeDisclosure(m.text));
-  const ndaAsked = thread.messages.some((m) => m.from === "interrogator" && looksLikeNdaRequest(m.text));
   let text: string;
-  let ndaWording: string | null = null;
   if (isJonny && !disclosed) {
     text = CONTROLLER_DISCLOSURE_ASK;
-  } else if (isJonny && disclosed && ndaAsked) {
+  } else if (isJonny && disclosed) {
     const source = thread.messages
       .filter((m) => m.from === "interrogator")
       .map((m) => m.text)
       .join(" ");
-    const p = parseParticulars(source);
-    ndaWording = buildKnowYourAgentNda({
-      date: englandDate(),
-      name: p.name,
-      nationality: p.nationality,
-      residence: p.residence,
-    });
-    text = `${ndaWording}${ndaOfferFooter()}`;
-  } else if (isJonny && disclosed) {
     text =
-      (await jonnyThreadGrokReply(thread.messages.map((m) => ({ from: m.from, text: m.text })))) ||
-      `This chat is not a Bind. Identity cover is with London Digital Insurance Limited.`;
+      (await jonnyThreadGrokReply({
+        transcript: thread.messages.map((m) => ({ from: m.from, text: m.text })),
+        particulars: parseParticulars(source),
+      })) || `This chat is not a Bind. Identity cover is with London Digital Insurance Limited.`;
   } else if (seq === 2) {
     text = `This is the English session host for ${subject.person}, ${subject.firm}. Identity cover lives on LDI, not in this thread. How can I help?`;
   } else {
@@ -245,11 +237,12 @@ export async function addSubjectReply(thread: Thread, subject: RosterEntry): Pro
   };
   thread.messages.push(msg);
   if (await persistReady()) await dbInsertMessage(thread.thread_id, msg);
+  const ndaWording = extractNdaWording(text);
   if (ndaWording) {
     try {
       await registerOffer({ thread, wording: ndaWording, company_signature: signature });
     } catch {
-      // offer store is best-effort; thread reply still stands
+      // offer store is best-effort
     }
   }
   return thread;
