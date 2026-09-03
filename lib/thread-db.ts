@@ -1,5 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 import type { Thread } from "./threads";
+import type { ReceiptView } from "./receipt-verify";
 
 function sql() {
   const url = process.env.DATABASE_URL;
@@ -27,6 +28,9 @@ export async function ensureThreadSchema(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `;
+  await db`ALTER TABLE conversation_threads ADD COLUMN IF NOT EXISTS receipt_id TEXT`;
+  await db`ALTER TABLE conversation_threads ADD COLUMN IF NOT EXISTS receipt_query_id TEXT`;
+  await db`ALTER TABLE conversation_threads ADD COLUMN IF NOT EXISTS receipt_json TEXT`;
   await db`
     CREATE TABLE IF NOT EXISTS conversation_messages (
       thread_id TEXT NOT NULL REFERENCES conversation_threads(thread_id),
@@ -42,6 +46,24 @@ export async function ensureThreadSchema(): Promise<void> {
   await db`CREATE INDEX IF NOT EXISTS conversation_threads_subject ON conversation_threads (subject_device_id)`;
 }
 
+function parseReceipt(row: Record<string, unknown>): ReceiptView | null {
+  if (!row.receipt_json) return null;
+  try {
+    return JSON.parse(String(row.receipt_json)) as ReceiptView;
+  } catch {
+    return row.receipt_id
+      ? {
+          presented: true,
+          ok: true,
+          live: false,
+          errors: [],
+          receipt_id: String(row.receipt_id),
+          query_id: row.receipt_query_id ? String(row.receipt_query_id) : undefined,
+        }
+      : null;
+  }
+}
+
 function mapThread(row: Record<string, unknown>, messages: Thread["messages"]): Thread {
   return {
     thread_id: String(row.thread_id),
@@ -54,19 +76,24 @@ function mapThread(row: Record<string, unknown>, messages: Thread["messages"]): 
     status: row.status === "closed" ? "closed" : "open",
     open_signature: String(row.open_signature),
     messages,
+    receipt_view: parseReceipt(row),
   };
 }
 
 export async function dbInsertThread(thread: Thread): Promise<void> {
   const db = sql();
+  const receiptJson = thread.receipt_view ? JSON.stringify(thread.receipt_view) : null;
+  const receiptId = thread.receipt_view?.receipt_id || null;
+  const queryId = thread.receipt_view?.query_id || null;
   await db`
     INSERT INTO conversation_threads (
       thread_id, subject_device_id, interrogator_key_id, language, cover_ref,
-      opened_at, closed_at, status, open_signature
+      opened_at, closed_at, status, open_signature, receipt_id, receipt_query_id, receipt_json
     ) VALUES (
       ${thread.thread_id}, ${thread.subject_device_id}, ${thread.interrogator_key_id},
       ${thread.language}, ${thread.cover_ref}, ${thread.opened_at}::timestamptz,
-      ${thread.closed_at}::timestamptz, ${thread.status}, ${thread.open_signature}
+      ${thread.closed_at}::timestamptz, ${thread.status}, ${thread.open_signature},
+      ${receiptId}, ${queryId}, ${receiptJson}
     )
   `;
 }

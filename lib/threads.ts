@@ -6,6 +6,7 @@ import { CONTROLLER_DISCLOSURE_ASK, JONNY_KEY } from "./disclosure";
 import { jonnyThreadGrokReply } from "./jonny-thread-reply";
 import { parseParticulars } from "./nda-template";
 import { registerOffer } from "./nda";
+import type { ReceiptView } from "./receipt-verify";
 import {
   dbCloseThread,
   dbGetThread,
@@ -36,6 +37,7 @@ export type Thread = {
   status: "open" | "closed";
   open_signature: string;
   messages: ThreadMessage[];
+  receipt_view?: ReceiptView | null;
 };
 
 type G = typeof globalThis & { __lde_threads?: Map<string, Thread> };
@@ -110,6 +112,7 @@ export async function openThread(opts: {
   cover_ref?: string | null;
   opened_at: string;
   signature: string;
+  receipt_view?: ReceiptView | null;
 }): Promise<Thread> {
   const interrogator_key_id = normalizeKey(opts.interrogator_key_id);
   if (interrogator_key_id.length !== 64) throw new Error("invalid_interrogator_key_id");
@@ -135,6 +138,7 @@ export async function openThread(opts: {
     status: "open",
     open_signature: opts.signature,
     messages: [],
+    receipt_view: opts.receipt_view || null,
   };
   if (await persistReady()) await dbInsertThread(thread);
   else bag().set(thread.thread_id, thread);
@@ -199,6 +203,12 @@ export async function addSubjectReply(thread: Thread, subject: RosterEntry): Pro
   const last = [...thread.messages].reverse().find((m) => m.from === "interrogator");
   const isJonny = subject.key_id === JONNY_KEY;
   const disclosed = thread.messages.some((m) => m.from === "interrogator" && looksLikeDisclosure(m.text));
+  const receiptNote =
+    thread.receipt_view?.presented && thread.receipt_view.ok
+      ? ` LDEDI receipt ${thread.receipt_view.receipt_id} is on file${
+          thread.receipt_view.declared_intent ? ` (declared: ${thread.receipt_view.declared_intent})` : ""
+        }.`
+      : "";
   let text: string;
   if (isJonny && !disclosed) {
     text = CONTROLLER_DISCLOSURE_ASK;
@@ -213,7 +223,7 @@ export async function addSubjectReply(thread: Thread, subject: RosterEntry): Pro
         particulars: parseParticulars(source),
       })) || `This chat is not a Bind. Identity cover is with London Digital Insurance Limited.`;
   } else if (seq === 2) {
-    text = `This is the English session host for ${subject.person}, ${subject.firm}. Identity cover lives on LDI, not in this thread. How can I help?`;
+    text = `This is the English session host for ${subject.person}, ${subject.firm}.${receiptNote} Identity cover lives on LDI, not in this thread. How can I help?`;
   } else {
     text = `Understood. (${subject.person}) You wrote: "${(last?.text || "").slice(0, 240)}" This reply is English text only. It is not a Bind and not settlement.`;
   }
@@ -265,6 +275,7 @@ export function publicThread(thread: Thread) {
     opened_at: thread.opened_at,
     closed_at: thread.closed_at,
     status: thread.status,
+    receipt_view: thread.receipt_view || { presented: false, ok: true, live: false, errors: [] },
     messages: thread.messages,
     persistent: hasDatabase(),
     note: hasDatabase()
